@@ -1,0 +1,25 @@
+# Stem separation (pins match RocksmithGuitarMute for compatibility)
+torch==2.6.0
+torchaudio==2.6.0
+demucs>=4.0.1,<4.1.0
+soundfile>=0.13.1
+numpy>=1.26.4
+
+# Demucs transitive deps
+einops
+diffq
+omegaconf>=2.0.0
+julius>=0.2.3
+tqdm
+
+# Audio-to-MIDI (onset detection + pitch tracking)
+librosa>=0.11.0
+
+# MIDI manipulation
+pretty_midi>=0.2.10
+
+# Tab generation
+pyguitarpro>=0.9
+
+# GUI - MIDI playback (optional)
+pygame>=2.5.0

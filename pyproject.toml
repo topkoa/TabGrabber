@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "tabgrabber"
+version = "0.1.0"
+description = "Extract guitar and bass tabs from audio files using AI stem separation"
+requires-python = ">=3.10,<3.13"
+license = {text = "MIT"}
+
+[project.scripts]
+tabgrabber = "tabgrabber.cli:main"
+tabgrabber-gui = "tabgrabber.gui.launch_gui:main"
+
+[project.optional-dependencies]
+gui = ["pygame>=2.5.0"]
+
+[tool.setuptools.packages.find]
+include = ["tabgrabber*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
