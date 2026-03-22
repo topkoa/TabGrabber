@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from tabgrabber import __version__
-from tabgrabber.pipeline import PipelineOptions, process
+from tabgrabber.pipeline import PipelineOptions, QUALITY_PRESETS, process
 from tabgrabber.utils import setup_logging, validate_audio_file
 
 
@@ -81,11 +81,30 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tuning", type=str, default=None,
                         help="Custom tuning as comma-separated notes, e.g. 'E2,A2,D3,G3,B3,E4' or '40,45,50,55,59,64'")
     parser.add_argument("--onset-threshold", type=float, default=0.5,
-                        help="basic-pitch onset sensitivity 0-1 (default: 0.5)")
+                        help="Onset detection sensitivity 0-1 (default: 0.5)")
     parser.add_argument("--frame-threshold", type=float, default=0.3,
-                        help="basic-pitch frame sensitivity 0-1 (default: 0.3)")
+                        help="Pitch confidence threshold 0-1 (default: 0.3)")
     parser.add_argument("--keep-intermediates", action="store_true", default=True,
                         help="Keep stem WAVs and MIDI files (default: true)")
+
+    # Quality presets and advanced parameters
+    quality_group = parser.add_argument_group("quality options")
+    quality_group.add_argument("--quality", default="fast",
+                               choices=["fast", "balanced", "high", "extreme"],
+                               help="Quality preset (default: fast)")
+    quality_group.add_argument("--demucs-shifts", type=int, default=None,
+                               help="Demucs random shifts for augmentation (overrides preset)")
+    quality_group.add_argument("--demucs-overlap", type=float, default=None,
+                               help="Demucs segment overlap 0.0-0.99 (overrides preset)")
+    quality_group.add_argument("--hop-length", type=int, default=None,
+                               choices=[128, 256, 512, 1024],
+                               help="Analysis hop length (overrides preset)")
+    quality_group.add_argument("--n-fft", type=int, default=None,
+                               choices=[1024, 2048, 4096, 8192],
+                               help="FFT window size (overrides preset)")
+    quality_group.add_argument("--onset-window", type=int, default=None,
+                               help="Frames to analyze around each onset (overrides preset)")
+
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="Enable verbose logging")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -115,16 +134,29 @@ def main(argv: list[str] | None = None) -> None:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
 
-    opts = PipelineOptions(
-        model=args.model,
-        device=args.device,
-        instruments=args.instruments,
-        formats=args.formats,
-        tuning=tuning,
-        onset_threshold=args.onset_threshold,
-        frame_threshold=args.frame_threshold,
-        keep_intermediates=args.keep_intermediates,
-    )
+    # Build quality overrides (only include explicitly set values)
+    quality_overrides = {
+        "model": args.model,
+        "device": args.device,
+        "instruments": args.instruments,
+        "formats": args.formats,
+        "tuning": tuning,
+        "onset_threshold": args.onset_threshold,
+        "frame_threshold": args.frame_threshold,
+        "keep_intermediates": args.keep_intermediates,
+    }
+    if args.demucs_shifts is not None:
+        quality_overrides["demucs_shifts"] = args.demucs_shifts
+    if args.demucs_overlap is not None:
+        quality_overrides["demucs_overlap"] = args.demucs_overlap
+    if args.hop_length is not None:
+        quality_overrides["hop_length"] = args.hop_length
+    if args.n_fft is not None:
+        quality_overrides["n_fft"] = args.n_fft
+    if args.onset_window is not None:
+        quality_overrides["onset_window"] = args.onset_window
+
+    opts = PipelineOptions.from_preset(args.quality, **quality_overrides)
 
     try:
         result = process(args.input_file, args.output_dir, opts)

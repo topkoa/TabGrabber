@@ -20,6 +20,9 @@ def extract_stems(
     model: str = DEFAULT_MODEL,
     device: str = "cpu",
     stems: list[str] | None = None,
+    shifts: int = 0,
+    overlap: float = 0.25,
+    segment: int | None = None,
 ) -> dict[str, Path]:
     """
     Run Demucs source separation on an audio file.
@@ -30,6 +33,9 @@ def extract_stems(
         model: Demucs model name (default: htdemucs_6s for 6-stem separation).
         device: Processing device ('cpu', 'cuda', or 'auto').
         stems: Which stems to return. Default: all available.
+        shifts: Number of random shifts for test-time augmentation (0=off, higher=better quality).
+        overlap: Overlap between segments (0.0-0.99, higher=smoother boundaries).
+        segment: Segment length in seconds (None=model default, larger=more context).
 
     Returns:
         Dict mapping stem name to WAV file path.
@@ -40,14 +46,21 @@ def extract_stems(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"Running Demucs separation ({model}) on: {audio_path.name}")
+    quality_info = f"shifts={shifts}, overlap={overlap}"
+    if segment:
+        quality_info += f", segment={segment}"
+    logger.info(f"Running Demucs separation ({model}, {quality_info}) on: {audio_path.name}")
 
     args = [
         "--name", model,
         "--device", device,
         "--out", str(output_dir),
-        str(audio_path),
+        "--shifts", str(shifts),
+        "--overlap", str(overlap),
     ]
+    if segment is not None:
+        args.extend(["--segment", str(segment)])
+    args.append(str(audio_path))
 
     logger.debug(f"Demucs args: {args}")
 

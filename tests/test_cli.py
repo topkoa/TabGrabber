@@ -65,3 +65,25 @@ class TestBuildParser:
         parser = build_parser()
         args = parser.parse_args(["song.mp3", "output/", "-v"])
         assert args.verbose is True
+
+    def test_quality_default(self):
+        parser = build_parser()
+        args = parser.parse_args(["song.mp3", "output/"])
+        assert args.quality == "fast"
+
+    def test_quality_preset(self):
+        parser = build_parser()
+        args = parser.parse_args(["song.mp3", "output/", "--quality", "high"])
+        assert args.quality == "high"
+
+    def test_quality_overrides(self):
+        parser = build_parser()
+        args = parser.parse_args([
+            "song.mp3", "output/",
+            "--quality", "balanced",
+            "--demucs-shifts", "5",
+            "--hop-length", "256",
+        ])
+        assert args.quality == "balanced"
+        assert args.demucs_shifts == 5
+        assert args.hop_length == 256

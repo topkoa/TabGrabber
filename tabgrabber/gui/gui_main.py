@@ -10,7 +10,7 @@ from pathlib import Path
 from tabgrabber import __version__
 from tabgrabber.gui.theme import COLORS, FONT_FAMILY, FONT_MONO, apply_dark_theme
 from tabgrabber.gui.midi_player import MidiPlayerWidget
-from tabgrabber.pipeline import PipelineOptions, process
+from tabgrabber.pipeline import PipelineOptions, QUALITY_PRESETS, process
 from tabgrabber.utils import get_device, SUPPORTED_AUDIO_EXTENSIONS
 
 logger = logging.getLogger("tabgrabber")
@@ -197,19 +197,81 @@ class TabGrabberGUI:
         ttk.Checkbutton(tab_opts_frame, text="Invert string order (low E on top)",
                          variable=self._invert_strings_var).pack(side=tk.LEFT)
 
-        # Row 4: Thresholds
-        ttk.Label(frame, text="Onset Threshold:").grid(row=4, column=0, sticky=tk.W, pady=2)
+        # Row 4: Quality preset
+        ttk.Label(frame, text="Quality Preset:").grid(row=4, column=0, sticky=tk.W, pady=2)
+        preset_frame = ttk.Frame(frame)
+        preset_frame.grid(row=4, column=1, columnspan=3, sticky=tk.W, padx=5, pady=2)
+
+        self._quality_var = tk.StringVar(value="fast")
+        quality_combo = ttk.Combobox(preset_frame, textvariable=self._quality_var, width=14,
+                                      state="readonly",
+                                      values=["fast", "balanced", "high", "extreme"])
+        quality_combo.pack(side=tk.LEFT)
+        quality_combo.bind("<<ComboboxSelected>>", self._on_quality_changed)
+
+        self._quality_desc = ttk.Label(preset_frame, text="Quick results, lower accuracy",
+                                        style="Subtitle.TLabel")
+        self._quality_desc.pack(side=tk.LEFT, padx=(10, 0))
+
+        # Row 5: Thresholds
+        ttk.Label(frame, text="Onset Threshold:").grid(row=5, column=0, sticky=tk.W, pady=2)
         self._onset_var = tk.DoubleVar(value=0.5)
         ttk.Spinbox(frame, from_=0.1, to=0.9, increment=0.05,
                      textvariable=self._onset_var, width=6).grid(
-            row=4, column=1, sticky=tk.W, padx=5, pady=2)
+            row=5, column=1, sticky=tk.W, padx=5, pady=2)
 
-        ttk.Label(frame, text="Frame Threshold:").grid(row=4, column=2, sticky=tk.W,
+        ttk.Label(frame, text="Frame Threshold:").grid(row=5, column=2, sticky=tk.W,
                                                          padx=(15, 0), pady=2)
         self._frame_var = tk.DoubleVar(value=0.3)
         ttk.Spinbox(frame, from_=0.1, to=0.9, increment=0.05,
                      textvariable=self._frame_var, width=6).grid(
-            row=4, column=3, sticky=tk.W, padx=5, pady=2)
+            row=5, column=3, sticky=tk.W, padx=5, pady=2)
+
+        # Row 6: Advanced toggle
+        self._advanced_visible = tk.BooleanVar(value=False)
+        self._advanced_toggle = ttk.Checkbutton(
+            frame, text="Show advanced quality settings",
+            variable=self._advanced_visible,
+            command=self._toggle_advanced,
+        )
+        self._advanced_toggle.grid(row=6, column=0, columnspan=4, sticky=tk.W, pady=(5, 2))
+
+        # Advanced settings frame (hidden by default)
+        self._advanced_frame = ttk.Frame(frame)
+
+        # Demucs params
+        ttk.Label(self._advanced_frame, text="Demucs Shifts:").grid(row=0, column=0, sticky=tk.W, pady=2)
+        self._shifts_var = tk.IntVar(value=0)
+        ttk.Spinbox(self._advanced_frame, from_=0, to=10, increment=1,
+                     textvariable=self._shifts_var, width=6).grid(
+            row=0, column=1, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(self._advanced_frame, text="Demucs Overlap:").grid(row=0, column=2, sticky=tk.W,
+                                                                      padx=(15, 0), pady=2)
+        self._overlap_var = tk.DoubleVar(value=0.25)
+        ttk.Spinbox(self._advanced_frame, from_=0.0, to=0.99, increment=0.05,
+                     textvariable=self._overlap_var, width=6).grid(
+            row=0, column=3, sticky=tk.W, padx=5, pady=2)
+
+        # Audio-to-MIDI params
+        ttk.Label(self._advanced_frame, text="Hop Length:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        self._hop_var = tk.IntVar(value=512)
+        ttk.Combobox(self._advanced_frame, textvariable=self._hop_var, width=6,
+                      state="readonly", values=[128, 256, 512, 1024]).grid(
+            row=1, column=1, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(self._advanced_frame, text="FFT Size:").grid(row=1, column=2, sticky=tk.W,
+                                                                 padx=(15, 0), pady=2)
+        self._nfft_var = tk.IntVar(value=2048)
+        ttk.Combobox(self._advanced_frame, textvariable=self._nfft_var, width=6,
+                      state="readonly", values=[1024, 2048, 4096, 8192]).grid(
+            row=1, column=3, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(self._advanced_frame, text="Onset Window:").grid(row=2, column=0, sticky=tk.W, pady=2)
+        self._onset_window_var = tk.IntVar(value=4)
+        ttk.Spinbox(self._advanced_frame, from_=1, to=16, increment=1,
+                     textvariable=self._onset_window_var, width=6).grid(
+            row=2, column=1, sticky=tk.W, padx=5, pady=2)
 
     def _build_progress_section(self, parent):
         """Build progress bar and status."""
@@ -280,6 +342,34 @@ class TabGrabberGUI:
         """Build the MIDI player tab."""
         self._midi_player = MidiPlayerWidget(parent, style="Section.TFrame")
         self._midi_player.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+    # --- Quality preset helpers ---
+
+    def _on_quality_changed(self, event=None):
+        """Update advanced params and description when preset changes."""
+        preset = self._quality_var.get()
+        params = QUALITY_PRESETS.get(preset, QUALITY_PRESETS["fast"])
+
+        self._shifts_var.set(params["demucs_shifts"])
+        self._overlap_var.set(params["demucs_overlap"])
+        self._hop_var.set(params["hop_length"])
+        self._nfft_var.set(params["n_fft"])
+        self._onset_window_var.set(params["onset_window"])
+
+        descriptions = {
+            "fast": "Quick results, lower accuracy",
+            "balanced": "Good balance of speed and quality",
+            "high": "Best accuracy, significantly slower",
+            "extreme": "Maximum accuracy, very slow — best for final output",
+        }
+        self._quality_desc.configure(text=descriptions.get(preset, ""))
+
+    def _toggle_advanced(self):
+        """Show/hide advanced quality settings."""
+        if self._advanced_visible.get():
+            self._advanced_frame.grid(row=7, column=0, columnspan=4, sticky=tk.EW, pady=(2, 5))
+        else:
+            self._advanced_frame.grid_remove()
 
     # --- File selection handlers ---
 
@@ -390,6 +480,11 @@ class TabGrabberGUI:
             onset_threshold=self._onset_var.get(),
             frame_threshold=self._frame_var.get(),
             invert_strings=self._invert_strings_var.get(),
+            demucs_shifts=self._shifts_var.get(),
+            demucs_overlap=self._overlap_var.get(),
+            hop_length=self._hop_var.get(),
+            n_fft=self._nfft_var.get(),
+            onset_window=self._onset_window_var.get(),
         )
 
         # Run in background thread
