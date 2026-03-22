@@ -16,6 +16,42 @@ from tabgrabber.utils import get_device
 logger = logging.getLogger("tabgrabber")
 
 
+QUALITY_PRESETS = {
+    "fast": {
+        "demucs_shifts": 0,
+        "demucs_overlap": 0.25,
+        "demucs_segment": None,  # model default
+        "hop_length": 512,
+        "n_fft": 2048,
+        "onset_window": 4,
+    },
+    "balanced": {
+        "demucs_shifts": 1,
+        "demucs_overlap": 0.25,
+        "demucs_segment": None,
+        "hop_length": 512,
+        "n_fft": 2048,
+        "onset_window": 6,
+    },
+    "high": {
+        "demucs_shifts": 3,
+        "demucs_overlap": 0.5,
+        "demucs_segment": None,
+        "hop_length": 256,
+        "n_fft": 4096,
+        "onset_window": 8,
+    },
+    "extreme": {
+        "demucs_shifts": 5,
+        "demucs_overlap": 0.75,
+        "demucs_segment": 40,       # longer segments = more context for separation
+        "hop_length": 128,
+        "n_fft": 8192,
+        "onset_window": 12,
+    },
+}
+
+
 @dataclass
 class PipelineOptions:
     """Configuration for the processing pipeline."""
@@ -28,6 +64,21 @@ class PipelineOptions:
     frame_threshold: float = 0.3
     keep_intermediates: bool = True
     invert_strings: bool = False
+    # Quality parameters — Demucs
+    demucs_shifts: int = 0
+    demucs_overlap: float = 0.25
+    demucs_segment: int | None = None  # None = model default
+    # Quality parameters — audio-to-MIDI
+    hop_length: int = 512
+    n_fft: int = 2048
+    onset_window: int = 4
+
+    @classmethod
+    def from_preset(cls, preset: str = "fast", **overrides) -> "PipelineOptions":
+        """Create options from a quality preset with optional overrides."""
+        params = dict(QUALITY_PRESETS.get(preset, QUALITY_PRESETS["fast"]))
+        params.update(overrides)
+        return cls(**params)
 
 
 @dataclass
@@ -76,6 +127,9 @@ def process(
         model=opts.model,
         device=device,
         stems=None,  # get all stems
+        shifts=opts.demucs_shifts,
+        overlap=opts.demucs_overlap,
+        segment=opts.demucs_segment,
     )
     # Filter to just the requested instruments for MIDI conversion
     stem_paths = {k: v for k, v in all_stem_paths.items() if k in opts.instruments}
@@ -106,6 +160,9 @@ def process(
                 instrument=instrument,
                 onset_threshold=opts.onset_threshold,
                 frame_threshold=opts.frame_threshold,
+                hop_length=opts.hop_length,
+                n_fft=opts.n_fft,
+                onset_window=opts.onset_window,
             )
             result.midi[instrument] = midi_path
         except Exception as e:

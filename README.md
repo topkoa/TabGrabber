@@ -46,7 +46,14 @@ pip install -r requirements.txt
 ### GUI (Recommended)
 
 ```bash
-python -m tabgrabber.gui.launch_gui
+# Double-click (no console window):
+run_gui.pyw
+
+# Or from command line:
+python -m tabgrabber.gui
+
+# Or if pip-installed:
+tabgrabber-gui
 ```
 
 The GUI provides:
@@ -63,8 +70,20 @@ The GUI provides:
 | Instruments | Guitar, Bass, or both | Both |
 | Output Formats | ASCII, Guitar Pro, MusicXML | ASCII |
 | Invert String Order | Low E on top in text tabs | Off |
+| Quality Preset | fast, balanced, high, extreme | fast |
 | Onset Threshold | Note onset sensitivity (0-1) | 0.5 |
 | Frame Threshold | Pitch confidence threshold (0-1) | 0.3 |
+
+**Quality Presets** trade processing speed for accuracy:
+
+| Preset | Demucs Shifts | Overlap | Segment | Hop Length | FFT Size | Onset Window | Speed |
+|--------|:---:|:---:|:---:|:---:|:---:|:---:|-------|
+| **fast** | 0 | 0.25 | default | 512 | 2048 | 4 | Fastest |
+| **balanced** | 1 | 0.25 | default | 512 | 2048 | 6 | Moderate |
+| **high** | 3 | 0.50 | default | 256 | 4096 | 8 | Slow |
+| **extreme** | 5 | 0.75 | 40s | 128 | 8192 | 12 | Very slow |
+
+Advanced settings can be expanded in the GUI to fine-tune individual parameters beyond presets.
 
 #### MIDI Player
 
@@ -94,6 +113,12 @@ python -m tabgrabber song.flac ./output --format all --tuning D2,A2,D3,G3,B3,E4
 
 # Adjust detection sensitivity
 python -m tabgrabber song.ogg ./output --onset-threshold 0.4 --frame-threshold 0.2
+
+# Use high quality preset
+python -m tabgrabber song.mp3 ./output --quality high
+
+# Extreme quality with custom Demucs shifts
+python -m tabgrabber song.mp3 ./output --quality extreme --demucs-shifts 8
 ```
 
 #### CLI Options
@@ -113,6 +138,17 @@ optional arguments:
   --frame-threshold     Pitch confidence 0-1 (default: 0.3)
   --keep-intermediates  Keep stem WAVs and MIDI files
   -v, --verbose         Verbose logging
+
+quality options:
+  --quality {fast,balanced,high,extreme}
+                        Quality preset (default: fast)
+  --demucs-shifts N     Demucs random shifts (overrides preset)
+  --demucs-overlap F    Demucs segment overlap 0.0-0.99 (overrides preset)
+  --hop-length {128,256,512,1024}
+                        Analysis hop length (overrides preset)
+  --n-fft {1024,2048,4096,8192}
+                        FFT window size (overrides preset)
+  --onset-window N      Frames around each onset (overrides preset)
 ```
 
 ## Output Structure
@@ -226,10 +262,12 @@ tabgrabber/
     guitar_pro.py      # Guitar Pro .gp5 writer
     musicxml.py        # MusicXML writer
   gui/
+    __main__.py        # python -m tabgrabber.gui entry point
     gui_main.py        # Main GUI window
     midi_player.py     # MIDI player widget with backing track
     theme.py           # Dark theme configuration
     launch_gui.py      # GUI entry point
+run_gui.pyw              # Double-click GUI launcher (no console)
 ```
 
 ## License

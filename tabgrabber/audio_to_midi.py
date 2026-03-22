@@ -41,6 +41,9 @@ def convert_to_midi(
     onset_threshold: float = 0.5,
     frame_threshold: float = 0.3,
     minimum_note_length: float = 58.0,
+    hop_length: int = 512,
+    n_fft: int = 2048,
+    onset_window: int = 4,
 ) -> Path:
     """
     Convert an audio stem to MIDI using librosa onset/pitch detection.
@@ -52,6 +55,9 @@ def convert_to_midi(
         onset_threshold: Sensitivity for note onsets (0-1, higher = fewer notes).
         frame_threshold: Sensitivity for pitch confidence (0-1, higher = fewer notes).
         minimum_note_length: Minimum note duration in milliseconds.
+        hop_length: Hop length for analysis (smaller = finer time resolution, slower).
+        n_fft: FFT window size (larger = better frequency resolution, slower).
+        onset_window: Frames to analyze around each onset (more = catches more chord notes).
 
     Returns:
         Path to the generated MIDI file.
@@ -67,22 +73,23 @@ def convert_to_midi(
     logger.info(f"Converting {audio_path.name} to MIDI (instrument={instrument})")
     logger.debug(
         f"Parameters: onset={onset_threshold}, frame={frame_threshold}, "
-        f"min_note={minimum_note_length}ms, freq_range={min_freq}-{max_freq}Hz"
+        f"min_note={minimum_note_length}ms, freq_range={min_freq}-{max_freq}Hz, "
+        f"hop={hop_length}, n_fft={n_fft}, onset_window={onset_window}"
     )
 
     # Load audio
     y, sr = librosa.load(str(audio_path), sr=22050, mono=True)
 
     # Detect onsets
-    onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+    onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length)
     # Map onset_threshold (0-1) to librosa's delta parameter
     # Higher threshold = fewer onsets (larger delta needed)
     onset_delta = onset_threshold * 0.15
     onset_frames = librosa.onset.onset_detect(
-        y=y, sr=sr, onset_envelope=onset_env,
-        delta=onset_delta, wait=int(sr * minimum_note_length / 1000 / 512),
+        y=y, sr=sr, onset_envelope=onset_env, hop_length=hop_length,
+        delta=onset_delta, wait=int(sr * minimum_note_length / 1000 / hop_length),
     )
-    onset_times = librosa.frames_to_time(onset_frames, sr=sr)
+    onset_times = librosa.frames_to_time(onset_frames, sr=sr, hop_length=hop_length)
 
     if len(onset_times) == 0:
         logger.warning(f"No onsets detected in {audio_path.name}")
@@ -99,7 +106,7 @@ def convert_to_midi(
     # Pitch tracking using piptrack (polyphonic capable)
     pitches, magnitudes = librosa.piptrack(
         y=y, sr=sr, fmin=min_freq, fmax=max_freq,
-        threshold=frame_threshold,
+        threshold=frame_threshold, hop_length=hop_length, n_fft=n_fft,
     )
 
     # Build note events from onsets + pitch tracking
@@ -114,6 +121,8 @@ def convert_to_midi(
         min_note_length=minimum_note_length / 1000.0,
         total_duration=librosa.get_duration(y=y, sr=sr),
         max_polyphony=max_polyphony,
+        hop_length=hop_length,
+        onset_window=onset_window,
     )
 
     logger.debug(f"Extracted {len(notes)} note events")
@@ -153,16 +162,19 @@ def _extract_notes(
     min_note_length: float,
     total_duration: float,
     max_polyphony: int = 6,
+    hop_length: int = 512,
+    onset_window: int = 4,
 ) -> list[tuple[float, float, int, int]]:
     """
     Extract note events by combining onset times with pitch data.
 
     Args:
         max_polyphony: Maximum simultaneous notes per onset (1 for bass, 6 for guitar).
+        hop_length: Hop length used in analysis (must match piptrack).
+        onset_window: Number of frames to analyze around each onset.
 
     Returns list of (start_time, end_time, midi_pitch, velocity) tuples.
     """
-    hop_length = 512
     notes = []
 
     for i, onset_time in enumerate(onset_times):
@@ -179,7 +191,7 @@ def _extract_notes(
             continue
 
         # Look at a small window of frames around the onset to find pitches
-        window_end = min(frame_idx + 4, pitches.shape[1])
+        window_end = min(frame_idx + onset_window, pitches.shape[1])
 
         # Collect pitches from frames in this window
         detected_pitches = set()
