@@ -198,7 +198,16 @@ class TabGrabberGUI:
 
         self._invert_strings_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(tab_opts_frame, text="Invert string order (low E on top)",
-                         variable=self._invert_strings_var).pack(side=tk.LEFT)
+                         variable=self._invert_strings_var).pack(side=tk.LEFT, padx=(0, 15))
+
+        self._lyrics_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(tab_opts_frame, text="Extract lyrics (WhisperX)",
+                         variable=self._lyrics_var).pack(side=tk.LEFT, padx=(0, 8))
+        self._lyrics_model_var = tk.StringVar(value="large-v2")
+        ttk.Combobox(tab_opts_frame, textvariable=self._lyrics_model_var, width=10,
+                      state="readonly",
+                      values=["tiny", "base", "small", "medium", "large-v2", "large-v3"]
+                      ).pack(side=tk.LEFT)
 
         # Row 4: Quality preset
         ttk.Label(frame, text="Quality Preset:").grid(row=4, column=0, sticky=tk.W, pady=2)
@@ -485,6 +494,9 @@ class TabGrabberGUI:
             onset_threshold=self._onset_var.get(),
             frame_threshold=self._frame_var.get(),
             invert_strings=self._invert_strings_var.get(),
+            extract_lyrics=self._lyrics_var.get(),
+            lyrics_disabled=not self._lyrics_var.get(),
+            lyrics_model=self._lyrics_model_var.get(),
             demucs_shifts=self._shifts_var.get(),
             demucs_overlap=self._overlap_var.get(),
             hop_length=self._hop_var.get(),

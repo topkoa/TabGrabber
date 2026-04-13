@@ -122,6 +122,7 @@ def write_sloppak(
     tab_data: dict[str, tuple[list[TabNote], InstrumentConfig]],
     stem_paths: dict[str, Path],
     as_dir: bool = False,
+    lyrics: list[dict] | None = None,
 ) -> Path:
     """Assemble a sloppak package at `out_path`.
 
@@ -174,6 +175,8 @@ def write_sloppak(
         "stems": stems_manifest,
         "arrangements": arrangements_manifest,
     }
+    if lyrics:
+        manifest["lyrics"] = "lyrics.json"
 
     # Stage all files in a temp directory, then either copy to out_path (dir
     # form) or zip them up (file form).
@@ -187,6 +190,12 @@ def write_sloppak(
             p = staging / rel
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(json.dumps(wire, separators=(",", ":")), encoding="utf-8")
+
+        if lyrics:
+            (staging / "lyrics.json").write_text(
+                json.dumps(lyrics, ensure_ascii=False, separators=(",", ":")),
+                encoding="utf-8",
+            )
 
         for sid, src in stem_paths.items():
             dst = staging / "stems" / f"{sid}.ogg"

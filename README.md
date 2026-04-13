@@ -11,6 +11,7 @@ TabGrabber takes any audio file, isolates the guitar and bass using Demucs sourc
 - **Tablature Generation** - Greedy fret assignment algorithm that minimizes hand movement and handles chords
 - **Multiple Output Formats** - ASCII tab (.txt), Guitar Pro (.gp5), MusicXML (.xml), Sloppak (.sloppak)
 - **Slopsmith Integration** - Package a whole run as a `.sloppak` song — stems, arrangements, and metadata — ready to drop into [slopsmith](https://github.com/byrongamatos/slopsmith) and play on the highway
+- **Karaoke Lyrics** - Transcribe the vocal stem with WhisperX (forced word-level alignment) and embed per-word timed lyrics into the `.sloppak` for highway-synced karaoke display
 - **Song Analysis** - Detects key, tempo, chord progressions, and song structure (intro/verse/chorus/bridge/outro)
 - **GUI with MIDI Player** - Dark-themed Tkinter interface with built-in MIDI playback and backing track support
 - **Batch Processing** - Process entire folders of audio files, each getting its own output subfolder
@@ -38,6 +39,7 @@ pip install -r requirements.txt
 | pretty_midi | MIDI file manipulation |
 | pyguitarpro | Guitar Pro file output |
 | PyYAML | Sloppak manifest authoring |
+| whisperx | Karaoke-style lyrics extraction (Whisper + wav2vec2 alignment) |
 | soundfile, numpy | Audio I/O |
 | pygame | MIDI playback in GUI (optional) |
 
@@ -142,6 +144,12 @@ optional arguments:
   --instruments {guitar,bass} [...]
   --format {ascii,gp5,musicxml,sloppak,all} [...]
   --sloppak-dir         Emit sloppak as a directory instead of a zip file
+  --lyrics              Transcribe vocals with WhisperX and write lyrics.json
+  --no-lyrics           Skip lyrics even when sloppak is requested
+  --lyrics-model {tiny,base,small,medium,large-v2,large-v3}
+                        Whisper model size (default: large-v2)
+  --lyrics-language LANG
+                        Force language ISO code (default: autodetect)
   --tuning TUNING       Custom tuning, e.g. "E2,A2,D3,G3,B3,E4" or "40,45,50,55,59,64"
   --onset-threshold     Note onset sensitivity 0-1 (default: 0.5)
   --frame-threshold     Pitch confidence 0-1 (default: 0.3)
@@ -223,6 +231,30 @@ Filenames of the form `Artist - Title.mp3` are parsed into the manifest's `artis
 
 Drop the generated `.sloppak` into slopsmith's `dlc/` directory. It shows up in the library with a **SLOPPAK** badge alongside PSARC songs. With the Stems plugin installed, each demucs stem becomes a live-mixable channel.
 
+### Lyrics Extraction (Karaoke Mode)
+
+Every `--format sloppak` run also transcribes the isolated vocal stem into per-word timed lyrics, stored as `lyrics.json` inside the package and referenced from `manifest.yaml`. Slopsmith renders them as karaoke-style lyrics on the highway alongside the note chart.
+
+**How it works**: TabGrabber feeds Demucs's `vocals.wav` into [WhisperX](https://github.com/m-bain/whisperX), which runs Whisper (`large-v2` by default) for transcription and then wav2vec2 forced alignment for phoneme-level word timing. The result is much tighter than plain Whisper's `word_timestamps` on sung vocals — typically sub-150ms drift on clear vocals.
+
+**Output shape** (matches slopsmith's lyrics schema):
+
+```json
+[
+  {"t": 12.34, "d": 0.28, "w": "hello"},
+  {"t": 12.62, "d": 0.41, "w": "darkness"},
+  ...
+]
+```
+
+**First run**: downloads ~3 GB of model weights (Whisper `large-v2` + wav2vec2 English alignment). GPU is strongly recommended but CPU works.
+
+**Flags**:
+- `--no-lyrics` skips lyrics entirely (e.g. instrumentals)
+- `--lyrics-model medium` trades some accuracy for a smaller/faster run
+- `--lyrics-language es` forces a non-English alignment model
+- `--lyrics` also works on non-sloppak runs — writes `lyrics.json` next to the tabs
+
 ## Song Analysis
 
 TabGrabber analyzes the original audio to detect:
@@ -302,6 +334,7 @@ tabgrabber/
   audio_to_midi.py     # librosa onset/pitch detection -> MIDI
   midi_to_tab.py       # MIDI note -> fret assignment
   song_analysis.py     # Key, tempo, chord, structure detection
+  lyrics.py            # WhisperX vocal-stem lyrics extraction
   utils.py             # Device detection, logging, validation
   tab_formats/
     ascii_tab.py       # ASCII tablature writer
