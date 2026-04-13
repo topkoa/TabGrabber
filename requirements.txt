@@ -24,5 +24,8 @@ pyguitarpro>=0.9
 # Sloppak packaging (manifest.yaml)
 PyYAML>=6.0
 
+# Lyrics extraction (karaoke-style alignment for sloppak)
+whisperx>=3.1
+
 # GUI - MIDI playback (optional)
 pygame>=2.5.0

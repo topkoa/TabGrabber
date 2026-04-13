@@ -1,5 +1,6 @@
 """Pipeline orchestration: audio → stems → MIDI → tablature."""
 
+import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -75,6 +76,12 @@ class PipelineOptions:
     onset_window: int = 4
     # Sloppak packaging: True = emit directory form, False = zip form
     sloppak_dir: bool = False
+    # Lyrics extraction (WhisperX). Auto-enabled when sloppak is in formats
+    # unless lyrics_disabled is True.
+    extract_lyrics: bool = False
+    lyrics_disabled: bool = False
+    lyrics_model: str = "large-v2"
+    lyrics_language: str | None = None
 
     @classmethod
     def from_preset(cls, preset: str = "fast", **overrides) -> "PipelineOptions":
@@ -93,6 +100,8 @@ class PipelineResult:
     backing_track: Path | None = None
     analysis_report: Path | None = None
     sloppak: Path | None = None
+    lyrics: list[dict] | None = None
+    lyrics_path: Path | None = None
 
 
 def process(
@@ -234,6 +243,30 @@ def process(
         except Exception as e:
             logger.error(f"Tab generation failed for {instrument}: {e}")
 
+    # Step 3.5: Extract lyrics from the vocal stem (WhisperX).
+    # Auto-enabled when sloppak is requested unless the user passed --no-lyrics.
+    want_lyrics = opts.extract_lyrics or (
+        "sloppak" in opts.formats and not opts.lyrics_disabled
+    )
+    if want_lyrics and "vocals" in all_stem_paths:
+        logger.info("Step 3.5: Extracting lyrics from vocal stem (WhisperX)...")
+        try:
+            from tabgrabber.lyrics import extract_lyrics
+            result.lyrics = extract_lyrics(
+                vocal_path=all_stem_paths["vocals"],
+                device=opts.device,
+                model_size=opts.lyrics_model,
+                language=opts.lyrics_language,
+            )
+            result.lyrics_path = output_dir / "lyrics.json"
+            result.lyrics_path.write_text(
+                json.dumps(result.lyrics, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            logger.info(f"Extracted {len(result.lyrics)} word entries")
+        except Exception as e:
+            logger.error(f"Lyrics extraction failed: {e}")
+
     # Optional: package as .sloppak (slopsmith open song format)
     if "sloppak" in opts.formats and sloppak_tab_data:
         try:
@@ -253,6 +286,7 @@ def process(
                 tab_data=sloppak_tab_data,
                 stem_paths=all_stem_paths,
                 as_dir=opts.sloppak_dir,
+                lyrics=result.lyrics,
             )
         except Exception as e:
             logger.error(f"Sloppak packaging failed: {e}")

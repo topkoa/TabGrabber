@@ -80,6 +80,16 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Output tab format(s) (default: ascii)")
     parser.add_argument("--sloppak-dir", action="store_true",
                         help="When emitting sloppak, write a directory instead of a zip file")
+    parser.add_argument("--lyrics", action="store_true",
+                        help="Extract karaoke-style lyrics from the vocal stem (WhisperX). "
+                             "Auto-enabled with --format sloppak unless --no-lyrics is passed")
+    parser.add_argument("--no-lyrics", action="store_true",
+                        help="Skip lyrics extraction even when sloppak is requested")
+    parser.add_argument("--lyrics-model", default="large-v2",
+                        choices=["tiny", "base", "small", "medium", "large-v2", "large-v3"],
+                        help="Whisper model size for lyrics (default: large-v2)")
+    parser.add_argument("--lyrics-language", default=None,
+                        help="Force ISO language code for lyrics (default: autodetect)")
     parser.add_argument("--tuning", type=str, default=None,
                         help="Custom tuning as comma-separated notes, e.g. 'E2,A2,D3,G3,B3,E4' or '40,45,50,55,59,64'")
     parser.add_argument("--onset-threshold", type=float, default=0.5,
@@ -147,6 +157,10 @@ def main(argv: list[str] | None = None) -> None:
         "frame_threshold": args.frame_threshold,
         "keep_intermediates": args.keep_intermediates,
         "sloppak_dir": args.sloppak_dir,
+        "extract_lyrics": args.lyrics,
+        "lyrics_disabled": args.no_lyrics,
+        "lyrics_model": args.lyrics_model,
+        "lyrics_language": args.lyrics_language,
     }
     if args.demucs_shifts is not None:
         quality_overrides["demucs_shifts"] = args.demucs_shifts
@@ -173,3 +187,5 @@ def main(argv: list[str] | None = None) -> None:
             print(p)
     if result.sloppak:
         print(result.sloppak)
+    if result.lyrics_path:
+        print(result.lyrics_path)
