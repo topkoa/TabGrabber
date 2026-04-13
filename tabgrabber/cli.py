@@ -76,8 +76,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Instruments to extract (default: guitar bass)")
     parser.add_argument("--format", dest="formats", nargs="+",
                         default=["ascii"],
-                        choices=["ascii", "gp5", "musicxml", "all"],
+                        choices=["ascii", "gp5", "musicxml", "sloppak", "all"],
                         help="Output tab format(s) (default: ascii)")
+    parser.add_argument("--sloppak-dir", action="store_true",
+                        help="When emitting sloppak, write a directory instead of a zip file")
     parser.add_argument("--tuning", type=str, default=None,
                         help="Custom tuning as comma-separated notes, e.g. 'E2,A2,D3,G3,B3,E4' or '40,45,50,55,59,64'")
     parser.add_argument("--onset-threshold", type=float, default=0.5,
@@ -144,6 +146,7 @@ def main(argv: list[str] | None = None) -> None:
         "onset_threshold": args.onset_threshold,
         "frame_threshold": args.frame_threshold,
         "keep_intermediates": args.keep_intermediates,
+        "sloppak_dir": args.sloppak_dir,
     }
     if args.demucs_shifts is not None:
         quality_overrides["demucs_shifts"] = args.demucs_shifts
@@ -168,3 +171,5 @@ def main(argv: list[str] | None = None) -> None:
     for instrument, paths in result.tabs.items():
         for p in paths:
             print(p)
+    if result.sloppak:
+        print(result.sloppak)

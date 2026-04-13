@@ -181,12 +181,15 @@ class TabGrabberGUI:
         self._fmt_ascii_var = tk.BooleanVar(value=True)
         self._fmt_gp5_var = tk.BooleanVar(value=False)
         self._fmt_xml_var = tk.BooleanVar(value=False)
+        self._fmt_sloppak_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(fmt_frame, text="ASCII Tab (.txt)",
                          variable=self._fmt_ascii_var).pack(side=tk.LEFT, padx=(0, 10))
         ttk.Checkbutton(fmt_frame, text="Guitar Pro (.gp5)",
                          variable=self._fmt_gp5_var).pack(side=tk.LEFT, padx=(0, 10))
         ttk.Checkbutton(fmt_frame, text="MusicXML (.xml)",
-                         variable=self._fmt_xml_var).pack(side=tk.LEFT)
+                         variable=self._fmt_xml_var).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Checkbutton(fmt_frame, text="Sloppak (.sloppak)",
+                         variable=self._fmt_sloppak_var).pack(side=tk.LEFT)
 
         # Row 3: Tab options
         ttk.Label(frame, text="Tab Options:").grid(row=3, column=0, sticky=tk.W, pady=2)
@@ -418,6 +421,8 @@ class TabGrabberGUI:
             formats.append("gp5")
         if self._fmt_xml_var.get():
             formats.append("musicxml")
+        if self._fmt_sloppak_var.get():
+            formats.append("sloppak")
         return formats
 
     def _validate_inputs(self) -> bool:

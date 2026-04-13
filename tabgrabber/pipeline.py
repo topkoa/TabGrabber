@@ -10,6 +10,7 @@ from tabgrabber.midi_to_tab import midi_to_tab_notes
 from tabgrabber.tab_formats.ascii_tab import write_ascii_tab
 from tabgrabber.tab_formats.guitar_pro import write_guitar_pro
 from tabgrabber.tab_formats.musicxml import write_musicxml
+from tabgrabber.tab_formats.sloppak import write_sloppak
 from tabgrabber.song_analysis import analyze_song, write_analysis_report
 from tabgrabber.utils import get_device
 
@@ -72,6 +73,8 @@ class PipelineOptions:
     hop_length: int = 512
     n_fft: int = 2048
     onset_window: int = 4
+    # Sloppak packaging: True = emit directory form, False = zip form
+    sloppak_dir: bool = False
 
     @classmethod
     def from_preset(cls, preset: str = "fast", **overrides) -> "PipelineOptions":
@@ -89,6 +92,7 @@ class PipelineResult:
     tabs: dict[str, list[Path]] = field(default_factory=dict)
     backing_track: Path | None = None
     analysis_report: Path | None = None
+    sloppak: Path | None = None
 
 
 def process(
@@ -172,6 +176,8 @@ def process(
     logger.info("Step 3/4: Generating tablature...")
     tabs_dir = output_dir / "tabs"
     title = input_path.stem.replace("_", " ").replace("-", " ").title()
+    sloppak_tab_data: dict = {}
+    last_tempo: float = 120.0
 
     for instrument, midi_path in result.midi.items():
         try:
@@ -180,6 +186,8 @@ def process(
                 instrument=instrument,
                 tuning=opts.tuning,
             )
+            sloppak_tab_data[instrument] = (tab_notes, config)
+            last_tempo = tempo
 
             tab_paths: list[Path] = []
 
@@ -225,6 +233,29 @@ def process(
 
         except Exception as e:
             logger.error(f"Tab generation failed for {instrument}: {e}")
+
+    # Optional: package as .sloppak (slopsmith open song format)
+    if "sloppak" in opts.formats and sloppak_tab_data:
+        try:
+            suffix = ".sloppak"
+            sloppak_out = output_dir / f"{input_path.stem}{suffix}"
+            duration = 0.0
+            try:
+                import soundfile as sf
+                info = sf.info(str(input_path))
+                duration = float(info.duration)
+            except Exception:
+                pass
+            result.sloppak = write_sloppak(
+                out_path=sloppak_out,
+                input_stem=input_path.stem,
+                duration=duration,
+                tab_data=sloppak_tab_data,
+                stem_paths=all_stem_paths,
+                as_dir=opts.sloppak_dir,
+            )
+        except Exception as e:
+            logger.error(f"Sloppak packaging failed: {e}")
 
     # Step 4: Song analysis
     logger.info("Step 4: Analyzing song structure...")
