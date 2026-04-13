@@ -9,7 +9,8 @@ TabGrabber takes any audio file, isolates the guitar and bass using Demucs sourc
 - **AI Stem Separation** - Uses Facebook's Demucs (htdemucs_6s) to isolate 6 stems: guitar, bass, drums, vocals, piano, other
 - **Audio-to-MIDI Conversion** - Polyphonic pitch detection for guitar, monophonic for bass, with instrument-specific frequency filtering
 - **Tablature Generation** - Greedy fret assignment algorithm that minimizes hand movement and handles chords
-- **Multiple Output Formats** - ASCII tab (.txt), Guitar Pro (.gp5), MusicXML (.xml)
+- **Multiple Output Formats** - ASCII tab (.txt), Guitar Pro (.gp5), MusicXML (.xml), Sloppak (.sloppak)
+- **Slopsmith Integration** - Package a whole run as a `.sloppak` song — stems, arrangements, and metadata — ready to drop into [slopsmith](https://github.com/byrongamatos/slopsmith) and play on the highway
 - **Song Analysis** - Detects key, tempo, chord progressions, and song structure (intro/verse/chorus/bridge/outro)
 - **GUI with MIDI Player** - Dark-themed Tkinter interface with built-in MIDI playback and backing track support
 - **Batch Processing** - Process entire folders of audio files, each getting its own output subfolder
@@ -36,6 +37,7 @@ pip install -r requirements.txt
 | librosa | Onset detection, pitch tracking, song analysis |
 | pretty_midi | MIDI file manipulation |
 | pyguitarpro | Guitar Pro file output |
+| PyYAML | Sloppak manifest authoring |
 | soundfile, numpy | Audio I/O |
 | pygame | MIDI playback in GUI (optional) |
 
@@ -68,7 +70,7 @@ The GUI provides:
 | Demucs Model | Stem separation model | htdemucs_6s |
 | Device | cpu, cuda, or auto | auto |
 | Instruments | Guitar, Bass, or both | Both |
-| Output Formats | ASCII, Guitar Pro, MusicXML | ASCII |
+| Output Formats | ASCII, Guitar Pro, MusicXML, Sloppak | ASCII |
 | Invert String Order | Low E on top in text tabs | Off |
 | Quality Preset | fast, balanced, high, extreme | fast |
 | Onset Threshold | Note onset sensitivity (0-1) | 0.5 |
@@ -119,6 +121,12 @@ python -m tabgrabber song.mp3 ./output --quality high
 
 # Extreme quality with custom Demucs shifts
 python -m tabgrabber song.mp3 ./output --quality extreme --demucs-shifts 8
+
+# Package a slopsmith-playable .sloppak (zip form)
+python -m tabgrabber "Artist - Song.mp3" ./output --format sloppak
+
+# Sloppak directory form (hand-editable)
+python -m tabgrabber song.mp3 ./output --format sloppak --sloppak-dir
 ```
 
 #### CLI Options
@@ -132,7 +140,8 @@ optional arguments:
   --model MODEL         Demucs model (default: htdemucs_6s)
   --device {auto,cpu,cuda}
   --instruments {guitar,bass} [...]
-  --format {ascii,gp5,musicxml,all} [...]
+  --format {ascii,gp5,musicxml,sloppak,all} [...]
+  --sloppak-dir         Emit sloppak as a directory instead of a zip file
   --tuning TUNING       Custom tuning, e.g. "E2,A2,D3,G3,B3,E4" or "40,45,50,55,59,64"
   --onset-threshold     Note onset sensitivity 0-1 (default: 0.5)
   --frame-threshold     Pitch confidence 0-1 (default: 0.3)
@@ -175,7 +184,44 @@ output/
       bass_tab.txt
     backing_track.wav      # All stems minus guitar/bass, mixed
     song_analysis.txt      # Key, tempo, chords, structure
+    songname.sloppak       # Optional — only with --format sloppak
 ```
+
+## Sloppak Output (Slopsmith Integration)
+
+Passing `--format sloppak` packages a TabGrabber run as a `.sloppak` song for [slopsmith](https://github.com/byrongamatos/slopsmith) — the open song format introduced in slopsmith PR #7. A single `.sloppak` contains everything slopsmith needs to render and play the song on the highway, and everything the [Stems plugin](https://github.com/topkoa/slopsmith-plugin-stems) needs for live per-instrument mixing.
+
+### What's inside
+
+```
+Artist - Song.sloppak/
+  manifest.yaml           # title, artist, duration, stems[], arrangements[]
+  stems/
+    guitar.ogg            # all six demucs stems, encoded to OGG Vorbis
+    bass.ogg
+    drums.ogg
+    vocals.ogg
+    piano.ogg
+    other.ogg
+  arrangements/
+    guitar.json           # slopsmith highway wire format (Lead)
+    bass.json             # slopsmith highway wire format (Bass)
+```
+
+The arrangement JSON matches slopsmith's `arrangement_to_wire` schema byte-for-byte, so it loads through the same seam as PSARC-sourced songs — no client changes needed. Effect flags (bends, hammer-ons, palm mute, etc.) are left at their defaults since TabGrabber doesn't detect them.
+
+### Title / artist
+
+Filenames of the form `Artist - Title.mp3` are parsed into the manifest's `artist` and `title` fields. Filenames without a ` - ` separator become `title`-only with an empty artist.
+
+### Requirements
+
+- **ffmpeg** on `PATH` — used to encode each demucs stem to OGG Vorbis (`libvorbis -q:a 5`).
+- **PyYAML** — installed via `requirements.txt`.
+
+### Usage
+
+Drop the generated `.sloppak` into slopsmith's `dlc/` directory. It shows up in the library with a **SLOPPAK** badge alongside PSARC songs. With the Stems plugin installed, each demucs stem becomes a live-mixable channel.
 
 ## Song Analysis
 
@@ -261,6 +307,7 @@ tabgrabber/
     ascii_tab.py       # ASCII tablature writer
     guitar_pro.py      # Guitar Pro .gp5 writer
     musicxml.py        # MusicXML writer
+    sloppak.py         # Slopsmith .sloppak packager
   gui/
     __main__.py        # python -m tabgrabber.gui entry point
     gui_main.py        # Main GUI window

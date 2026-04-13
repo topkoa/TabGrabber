@@ -21,5 +21,8 @@ pretty_midi>=0.2.10
 # Tab generation
 pyguitarpro>=0.9
 
+# Sloppak packaging (manifest.yaml)
+PyYAML>=6.0
+
 # GUI - MIDI playback (optional)
 pygame>=2.5.0
