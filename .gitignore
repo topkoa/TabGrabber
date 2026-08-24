@@ -25,6 +25,9 @@ Desktop.ini
 
 # Project artifacts
 output/
+# Web UI working directory (downloads, uploads, results)
+tabgrabber-web-data/
+webui_data/
 *.mid
 *.gp5
 *.musicxml

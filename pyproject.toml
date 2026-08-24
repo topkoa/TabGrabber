@@ -27,12 +27,24 @@ dependencies = [
 [project.scripts]
 tabgrabber = "tabgrabber.cli:main"
 tabgrabber-gui = "tabgrabber.gui.launch_gui:main"
+tabgrabber-web = "tabgrabber.web.server:main"
 
 [project.optional-dependencies]
 gui = ["pygame>=2.5.0"]
+web = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "python-multipart>=0.0.9",
+    "yt-dlp>=2024.1.0",
+]
+# Word-level lyric timings for the web UI's chord sheet.
+lyrics = ["openai-whisper>=20231117"]
 
 [tool.setuptools.packages.find]
 include = ["tabgrabber*"]
+
+[tool.setuptools.package-data]
+"tabgrabber.web" = ["*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

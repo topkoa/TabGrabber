@@ -4,6 +4,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from tabgrabber.stems import extract_stems
 from tabgrabber.audio_to_midi import convert_to_midi
@@ -99,6 +100,10 @@ class PipelineResult:
     tabs: dict[str, list[Path]] = field(default_factory=dict)
     backing_track: Path | None = None
     analysis_report: Path | None = None
+    # Structured analysis (key, tempo, timed chords, sections). Consumers that
+    # need the data rather than the text report read this instead of re-running
+    # the (expensive) analysis pass.
+    analysis: Any = None
     sloppak: Path | None = None
     lyrics: list[dict] | None = None
     lyrics_path: Path | None = None
@@ -298,6 +303,7 @@ def process(
         report_path = output_dir / "song_analysis.txt"
         write_analysis_report(analysis, report_path)
         result.analysis_report = report_path
+        result.analysis = analysis
     except Exception as e:
         logger.warning(f"Song analysis failed: {e}")
 
