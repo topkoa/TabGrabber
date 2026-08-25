@@ -29,3 +29,15 @@ whisperx>=3.1
 
 # GUI - MIDI playback (optional)
 pygame>=2.5.0
+
+# Web UI (optional) - pip install -r requirements.txt covers it, or use
+# `pip install .[web]` to pull only these.
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+yt-dlp>=2024.1.0
+
+# Word-level lyric timings for the web UI chord sheet (optional).
+# WhisperX above is used by the CLI's --lyrics; the web UI uses openai-whisper,
+# which works with the torch pins in this file.
+openai-whisper>=20231117

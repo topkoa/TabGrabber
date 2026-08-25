@@ -16,6 +16,15 @@ INSTRUMENT_CHANNELS = {
 }
 
 
+def _make_tempo(tempo: float):
+    """Build a tempo value for whichever pyguitarpro version is installed.
+
+    Up to 0.9 tempo was a `models.Tempo` object; 0.10+ uses a plain int.
+    """
+    tempo_cls = getattr(guitarpro.models, "Tempo", None)
+    return tempo_cls(int(tempo)) if tempo_cls else int(tempo)
+
+
 def write_guitar_pro(
     notes: list[TabNote],
     config: InstrumentConfig,
@@ -34,7 +43,7 @@ def write_guitar_pro(
 
     song = guitarpro.models.Song()
     song.title = title or output_path.stem
-    song.tempo = guitarpro.models.Tempo(int(tempo))
+    song.tempo = _make_tempo(tempo)
 
     # Create track with correct tuning
     track = song.tracks[0]
@@ -73,11 +82,14 @@ def write_guitar_pro(
             header = guitarpro.models.MeasureHeader()
             header.number = m_idx + 1
             header.start = guitarpro.models.Duration.quarterTime * 4 * m_idx + guitarpro.models.Duration.quarterTime
-            header.tempo = guitarpro.models.Tempo(int(tempo))
+            # pyguitarpro >= 0.10 dropped MeasureHeader.tempo; the song-level
+            # tempo covers it there.
+            if hasattr(header, "tempo"):
+                header.tempo = _make_tempo(tempo)
             song.measureHeaders.append(header)
 
         header = song.measureHeaders[m_idx]
-        measure = guitarpro.models.Measure(header, track)
+        measure = guitarpro.models.Measure(track, header)
 
         # Get notes in this measure
         measure_notes = [n for n in notes if m_start <= n.time < m_end]

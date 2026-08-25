@@ -66,6 +66,120 @@ class SongAnalysis:
     duration: float       # seconds
     chords: list[ChordEvent] = field(default_factory=list)
     sections: list[SongSection] = field(default_factory=list)
+    # The unsmoothed per-beat detection, kept for callers that want to do
+    # their own post-processing.
+    chords_raw: list[ChordEvent] = field(default_factory=list)
+
+
+PITCH_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+_FLAT_TO_SHARP = {"Db": "C#", "Eb": "D#", "Gb": "F#", "Ab": "G#", "Bb": "A#"}
+# Triads of the major scale and of the natural minor scale, as
+# (semitone offset from the tonic, is_minor). The minor list also carries the
+# borrowed major dominant, which is far too common to treat as out of key.
+_MAJOR_DEGREES = [(0, False), (2, True), (4, True), (5, False), (7, False), (9, True)]
+_MINOR_DEGREES = [(0, True), (3, False), (5, True), (7, True), (7, False),
+                  (8, False), (10, False)]
+
+# Chord changes land on bar lines far more often than on beats, so votes are
+# pooled over roughly a bar, clamped so that extreme tempo estimates cannot
+# produce a uselessly short or long window.
+MIN_CHORD_WINDOW = 1.5
+MAX_CHORD_WINDOW = 3.0
+# How much more a chord counts for when it belongs to the detected key.
+DIATONIC_BONUS = 1.4
+# A non-diatonic winner is swapped for its diatonic parallel when the parallel
+# polled at least this fraction of the winner's votes.
+PARALLEL_SWAP_RATIO = 0.45
+
+
+def diatonic_chords(key: str) -> set[str]:
+    """Chord names belonging to a key such as "D major" or "A minor"."""
+    if not key:
+        return set()
+    parts = key.split()
+    root = _FLAT_TO_SHARP.get(parts[0], parts[0])
+    if root not in PITCH_NAMES:
+        return set()
+    base = PITCH_NAMES.index(root)
+    is_minor_key = len(parts) > 1 and parts[1].lower().startswith("min")
+    degrees = _MINOR_DEGREES if is_minor_key else _MAJOR_DEGREES
+    return {PITCH_NAMES[(base + offset) % 12] + ("m" if is_minor else "")
+            for offset, is_minor in degrees}
+
+
+def smooth_chords(
+    chords: list[ChordEvent],
+    tempo: float,
+    key: str,
+) -> list[ChordEvent]:
+    """Reduce a per-beat chord track to the chords actually being played.
+
+    Template matching against chroma emits a chord for every beat, and a good
+    share of those are low-confidence or plainly out of key. Read literally the
+    result is unplayable: a different chord every half second, peppered with
+    accidentals the song never contains.
+
+    Real songs hold a chord for about a bar, so votes are pooled over a
+    bar-length window and weighted by detection confidence and by whether the
+    chord belongs to the detected key. Runs of the same winner are then merged,
+    which typically collapses the track by a factor of five or more.
+    """
+    if not chords:
+        return []
+
+    bar = 4.0 * 60.0 / tempo if tempo and tempo > 0 else 2.0
+    window = min(max(bar, MIN_CHORD_WINDOW), MAX_CHORD_WINDOW)
+    diatonic = diatonic_chords(key)
+
+    start = chords[0].time
+    end = max(c.time + c.duration for c in chords)
+    picked: list[ChordEvent] = []
+
+    for i in range(int((end - start) / window) + 1):
+        lo = start + i * window
+        hi = lo + window
+
+        votes: dict[str, float] = {}
+        for c in chords:
+            overlap = min(c.time + c.duration, hi) - max(c.time, lo)
+            if overlap <= 0:
+                continue
+            weight = overlap * max(c.confidence, 0.05)
+            if diatonic and c.chord in diatonic:
+                weight *= DIATONIC_BONUS
+            votes[c.chord] = votes.get(c.chord, 0.0) + weight
+
+        if not votes:
+            continue
+
+        best = max(votes, key=votes.get)
+
+        # Confusing a major third for a minor one is this detector's most
+        # common mistake. When the winner sits outside the key but its parallel
+        # does not, and the parallel polled respectably, prefer the parallel.
+        if diatonic and best not in diatonic:
+            parallel = best[:-1] if best.endswith("m") else best + "m"
+            if parallel in diatonic and                     votes.get(parallel, 0.0) >= PARALLEL_SWAP_RATIO * votes[best]:
+                best = parallel
+
+        total = sum(votes.values())
+        picked.append(ChordEvent(
+            time=lo,
+            duration=window,
+            chord=best,
+            confidence=votes[best] / total if total else 0.0,
+        ))
+
+    # Merge consecutive windows that agree.
+    merged: list[ChordEvent] = []
+    for c in picked:
+        if merged and merged[-1].chord == c.chord:
+            prev = merged[-1]
+            prev.duration = c.time + c.duration - prev.time
+            prev.confidence = max(prev.confidence, c.confidence)
+        else:
+            merged.append(c)
+    return merged
 
 
 def analyze_song(audio_path: Path) -> SongAnalysis:
@@ -100,9 +214,12 @@ def analyze_song(audio_path: Path) -> SongAnalysis:
     key, key_confidence = _detect_key(chroma)
     logger.info(f"Detected key: {key} (confidence: {key_confidence:.2f})")
 
-    # Chord detection
-    chords = _detect_chords(chroma, sr, beat_times)
-    logger.info(f"Detected {len(chords)} chord changes")
+    # Chord detection. The raw per-beat track is far too noisy to read, so it
+    # is smoothed into bar-length chords before anything else consumes it.
+    raw_chords = _detect_chords(chroma, sr, beat_times)
+    chords = smooth_chords(raw_chords, tempo, key)
+    logger.info(f"Detected {len(raw_chords)} raw chords, "
+                f"{len(chords)} after smoothing")
 
     # Song structure / section detection
     sections = _detect_sections(y, sr, chroma, chords, duration)
@@ -119,6 +236,7 @@ def analyze_song(audio_path: Path) -> SongAnalysis:
         duration=duration,
         chords=chords,
         sections=sections,
+        chords_raw=raw_chords,
     )
 
 

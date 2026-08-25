@@ -13,6 +13,7 @@ TabGrabber takes any audio file, isolates the guitar and bass using Demucs sourc
 - **Slopsmith Integration** - Package a whole run as a `.sloppak` song — stems, arrangements, and metadata — ready to drop into [slopsmith](https://github.com/byrongamatos/slopsmith) and play on the highway
 - **Karaoke Lyrics** - Transcribe the vocal stem with WhisperX (forced word-level alignment) and embed per-word timed lyrics into the `.sloppak` for highway-synced karaoke display
 - **Song Analysis** - Detects key, tempo, chord progressions, and song structure (intro/verse/chorus/bridge/outro)
+- **Web UI with Synced Chord Sheet** - Paste a YouTube or Spotify link, watch the run live in the browser, then play the song back with the chords sitting above the lyrics and following along in time
 - **GUI with MIDI Player** - Dark-themed Tkinter interface with built-in MIDI playback and backing track support
 - **Batch Processing** - Process entire folders of audio files, each getting its own output subfolder
 
@@ -29,6 +30,18 @@ cd TabGrabber
 pip install -r requirements.txt
 ```
 
+Or install the package with only the extras you need:
+
+```bash
+pip install .            # core: CLI tabs and song analysis
+pip install .[gui]       # + Tkinter GUI with MIDI playback
+pip install .[web]       # + browser UI, YouTube/Spotify downloads
+pip install .[lyrics]    # + Whisper lyrics for the web chord sheet
+```
+
+**ffmpeg** must be on `PATH` for audio decoding, MP3 conversion and OGG
+encoding.
+
 ### Dependencies
 
 | Package | Purpose |
@@ -42,12 +55,64 @@ pip install -r requirements.txt
 | whisperx | Karaoke-style lyrics extraction (Whisper + wav2vec2 alignment) |
 | soundfile, numpy | Audio I/O |
 | pygame | MIDI playback in GUI (optional) |
+| fastapi, uvicorn | Web UI server (optional) |
+| yt-dlp | Downloading audio from links in the web UI (optional) |
+| openai-whisper | Timed lyrics for the web UI chord sheet (optional) |
 
 > **Note:** torch/torchaudio pins (2.6.0) match the [RocksmithGuitarMute](https://github.com/topkoa/RocksmithGuitarMute) project for shared virtual environment compatibility.
 
 ## Usage
 
-### GUI (Recommended)
+### Web UI
+
+```bash
+# Console script (after pip install .[web])
+tabgrabber-web
+
+# Or from a checkout
+python -m tabgrabber.web.server
+
+# Or double-click
+run_web.pyw
+```
+
+It starts a local server on <http://127.0.0.1:8420> and opens a browser. Nothing
+leaves your machine except the audio download itself.
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--host` | Interface to bind | 127.0.0.1 |
+| `--port` | Port to listen on | 8420 |
+| `--data-dir` | Where downloads and results are written | `./tabgrabber-web-data` |
+| `--no-browser` | Do not open a browser on startup | off |
+
+**Input** - paste a YouTube link, a Spotify track link, or just a song name to
+search YouTube for it. You can also drop a local audio file onto the page.
+
+> Spotify streams are DRM protected and cannot be downloaded. A Spotify link is
+> resolved to its artist and title through the public track page, and the same
+> song is then fetched from YouTube. Check the log line if you care which
+> recording you got, since it may land on a cover or a live version.
+
+**Player** - when the run finishes you get the song with a chord sheet under it:
+
+- Chords sit above the word where they actually fall, the way a printed chord
+  sheet reads
+- The current line is highlighted and scrolls itself into view, and words light
+  up as they are sung
+- The current and next chord are shown in large type above the sheet
+- Click any line to jump the audio there
+- Playback speed 50-120% for practising, and transpose by semitones
+
+**Lyrics** are transcribed with Whisper from the isolated vocal stem, which is
+considerably more accurate than running it over the full mix. The default
+`large-v3` model downloads about 3 GB on first use; `medium` and `small` are
+offered for a faster, less accurate pass. Turn the checkbox off to get a
+chords-only sheet.
+
+Only one job runs at a time, since stem separation is GPU bound.
+
+### Desktop GUI
 
 ```bash
 # Double-click (no console window):
@@ -192,6 +257,7 @@ output/
       bass_tab.txt
     backing_track.wav      # All stems minus guitar/bass, mixed
     song_analysis.txt      # Key, tempo, chords, structure
+    chordsheet.json        # Timed chords + lyrics (web UI runs only)
     songname.sloppak       # Optional — only with --format sloppak
 ```
 
@@ -261,7 +327,7 @@ TabGrabber analyzes the original audio to detect:
 
 - **Key** - Using Krumhansl-Kessler key profiles against chroma features (e.g. "D major", "A minor")
 - **Tempo** - Beat tracking via librosa
-- **Chord Progression** - Chroma-to-chord template matching at each beat (major and minor triads)
+- **Chord Progression** - Chroma-to-chord template matching at each beat (major and minor triads), then smoothed into bar-length chords
 - **Song Structure** - Section boundaries via self-similarity matrix and novelty detection, labeled as Intro/Verse/Chorus/Bridge/Outro based on chord pattern repetition
 
 Example output:
@@ -288,6 +354,28 @@ SONG STRUCTURE
                Chords: D - A - G - D - A - G
   ...
 ```
+
+### Chord Smoothing
+
+Template matching emits a chord for every beat, and a fair share of those are
+low-confidence or plainly out of key. Read literally the result is unplayable:
+a different chord every half second, peppered with accidentals the song never
+contains.
+
+Real songs hold a chord for about a bar, so `smooth_chords()` pools votes over
+a bar-length window (clamped to 1.5-3.0 s so a bad tempo estimate cannot ruin
+it), weighting each vote by detection confidence and by whether the chord
+belongs to the detected key. Runs of the same winner are then merged. Because
+mistaking a major third for a minor one is the most common failure, a winner
+that sits outside the key is swapped for its parallel when the parallel polled
+at least 45% of the winner's votes.
+
+On a I-V-I-IV song in D major this takes 132 raw per-beat detections down to 24
+chords reading `D A D G` repeatedly, with two stragglers left over.
+
+`SongAnalysis.chords` holds the smoothed track; `SongAnalysis.chords_raw` keeps
+the original per-beat detection for callers that want to post-process it
+themselves.
 
 ## How It Works
 
@@ -341,6 +429,11 @@ tabgrabber/
     guitar_pro.py      # Guitar Pro .gp5 writer
     musicxml.py        # MusicXML writer
     sloppak.py         # Slopsmith .sloppak packager
+  web/
+    __init__.py
+    server.py          # FastAPI app, job queue, SSE progress stream
+    chordsheet.py      # Whisper lyrics merged with timed chords
+    index.html         # Single-page front end (player + chord sheet)
   gui/
     __main__.py        # python -m tabgrabber.gui entry point
     gui_main.py        # Main GUI window
@@ -348,6 +441,8 @@ tabgrabber/
     theme.py           # Dark theme configuration
     launch_gui.py      # GUI entry point
 run_gui.pyw              # Double-click GUI launcher (no console)
+run_web.pyw              # Double-click web UI launcher
+run_web.bat              # Windows launcher, prefers .venv if present
 ```
 
 ## License
