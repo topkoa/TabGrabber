@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "tabgrabber"
@@ -8,6 +8,21 @@ version = "0.1.0"
 description = "Extract guitar and bass tabs from audio files using AI stem separation"
 requires-python = ">=3.10,<3.13"
 license = {text = "MIT"}
+dependencies = [
+    # torch and torchaudio are deliberately NOT listed here even though
+    # demucs itself requires them: adding our own pin on top would only add
+    # a second, possibly conflicting constraint. Install the CUDA build from
+    # the PyTorch index URL *before* `pip install .` (see README) so pip
+    # finds it already satisfied; otherwise demucs's own requirement pulls
+    # the CPU-only wheel from PyPI, which still works, just slower.
+    "demucs>=4.0.1,<4.1.0",
+    "librosa>=0.11.0",
+    "pretty_midi>=0.2.10",
+    "pyguitarpro>=0.9",
+    "PyYAML>=6.0",
+    "soundfile>=0.13.1",
+    "numpy>=1.26.4",
+]
 
 [project.scripts]
 tabgrabber = "tabgrabber.cli:main"
